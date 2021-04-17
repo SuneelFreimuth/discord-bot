@@ -1,8 +1,35 @@
 import random
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
+import discord
 from discord.ext import commands
-from discord import File as DiscFile
 import matplotlib.pyplot as plt
+import sys
+from argparse import ArgumentParser
+
+
+GREEN = '\033[32m'
+CLEAR = '\033[0m'
+def success(*args):
+    print(GREEN + '✓', *args, CLEAR)
+
+
+parser = ArgumentParser('Suneel Freimuth\'s Discord bot.')
+parser.add_argument('--token', type=str, help='Your bot token. Either pass it with this argument or place it in bot_token.txt.')
+args = parser.parse_args()
+
+token = args.token
+if token:
+    success('Bot token provided as command line argument.')
+else:
+    try:
+        f = open('bot_token.txt')
+        token = f.read().strip()
+        f.close()
+        success('Bot token loaded from bot_token.txt')
+    except FileNotFoundError:
+        print('No bot_token.txt found. Either place your bot token in a file called bot_token.txt or run with --token=<token>', file=sys.stderr)
+        exit(1)
+
 
 bot = commands.Bot(command_prefix="$")
 
@@ -10,12 +37,13 @@ bot = commands.Bot(command_prefix="$")
 # Use my help command, not discord.py's.
 bot.remove_command('help')
 
-help_texts = {
-    'help': ('$help [command]', 'Display this help message or get help on a specific command.'),
-    'ping': ('$ping', 'pong'),
-    'insult': ('$insult', 'Self-explanatory.'),
-    'contributions': ('$contributions', 'Count the number of times each user has sent a message in this channel and represent the data as a histogram.')
-}
+help_texts = OrderedDict(
+    help=('$help [command]', 'Display a list of commands or get help on a specific command.'),
+    ping=('$ping', 'pong'),
+    meow=('$meow', 'meow'),
+    insult=('$insult', 'Self-explanatory.'),
+    contributions=('$contributions', 'Count the number of times each user has sent a message in this channel and represent the data as a bar graph.')
+)
 
 full_help_text = '**Commands:**\n'
 for format, description in help_texts.values():
@@ -26,7 +54,8 @@ async def help(ctx, command=None):
     if command:
         command = command.lstrip('$')
         if command in help_texts:
-            msg = f'`${command}`: {help_texts[command]}'
+            format, description = help_texts[command]
+            msg = f'`{format}`: {description}'
         else:
             msg = full_help_text
     else:
@@ -39,18 +68,29 @@ async def ping(ctx):
     await ctx.send('pong')
 
 
-f = open('adjectives.txt')
-adjectives = [l.strip() for l in f.readlines()]
-f.close()
-
-f = open('animals.txt')
-animals = [l.strip().lower() for l in f.readlines()]
-f.close()
-
 @bot.command()
-async def insult(ctx):
-    adj, animal = random.choice(adjectives), random.choice(animals)
-    await ctx.send(f'Shut the fuck up, you {adj} {animal}')
+async def meow(ctx):
+    await ctx.send('meow')
+
+
+try:
+    f = open('adjectives.txt')
+    adjectives = [l.strip() for l in f.readlines()]
+    f.close()
+
+    f = open('animals.txt')
+    animals = [l.strip().lower() for l in f.readlines()]
+    f.close()
+
+    @bot.command()
+    async def insult(ctx):
+        adj, animal = random.choice(adjectives), random.choice(animals)
+        await ctx.send(f'Shut the fuck up, you {adj} {animal}')
+except FileNotFoundError as err:
+    print(f'Could not load {err.filename}. $insult will not be loaded.', file=sys.stderr)
+    @bot.command()
+    async def insult(ctx):
+        await ctx.send("Couldn't find my lists of insult ingredients but you're still a little bitch boy.")
 
 
 def draw_text_bar_graph(data: [(str, int)]) -> str:
@@ -87,21 +127,26 @@ def draw_bar_graph(data: dict) -> 'Plot':
     fig.savefig('./bar_plot.png')
     return './bar_plot.png'
 
-
 @bot.command()
 async def contributions(ctx):
     counts = defaultdict(int)
     async for message in ctx.channel.history(limit=1000):
         counts[message.author.name] += 1
     file_path = draw_bar_graph(counts)
-    await ctx.send(file=DiscFile(file_path))
+    await ctx.send(file=discord.File(file_path))
 
 
-@bot.listen
+@bot.listen()
 async def on_ready():
-    print('Ready!')
+    success('Ready!')
 
-f = open('bot_token.txt')
-token = f.read().strip()
-f.close()
+async def on_command_error(ctx, err):
+    if type(err) == commands.CommandNotFound:
+        await ctx.send(full_help_text)
+    else:
+        print(err.message, file=sys.stderr)
+
+bot.on_command_error = on_command_error
+
+print('  Starting bot...')
 bot.run(token)
