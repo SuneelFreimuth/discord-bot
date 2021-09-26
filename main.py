@@ -1,10 +1,13 @@
 import random
+import re
+import sys
 from collections import defaultdict, OrderedDict
+from argparse import ArgumentParser
+
 import discord
 from discord.ext import commands
 import matplotlib.pyplot as plt
-import sys
-from argparse import ArgumentParser
+import asyncio
 
 
 GREEN = '\033[32m'
@@ -41,8 +44,7 @@ help_texts = OrderedDict(
     help=('$help [command]', 'Display a list of commands or get help on a specific command.'),
     ping=('$ping', 'pong'),
     meow=('$meow', 'meow'),
-    insult=('$insult', 'Self-explanatory.'),
-    contributions=('$contributions', 'Count the number of times each user has sent a message in this channel and represent the data as a bar graph.')
+    contributions=('$contributions', 'Count the number of times each user has sent a message in this channel and display the data as a bar graph.')
 )
 
 full_help_text = '**Commands:**\n'
@@ -68,32 +70,22 @@ async def ping(ctx):
     await ctx.send('pong')
 
 
+meow_pattern = re.compile(r'm[aeiou]([aeiu]|(?=[^aeiou]))')
+
 @bot.command()
 async def meow(ctx):
-    await ctx.send('meow')
+    history = ctx.channel.history(limit=2)
+    _ = await history.next()
+    # Message before the command invocation.
+    msg = await history.next()
+    response = meow_pattern.sub('meow', msg.content)
+    await ctx.send(response)
 
 
-try:
-    f = open('adjectives.txt')
-    adjectives = [l.strip() for l in f.readlines()]
-    f.close()
-
-    f = open('animals.txt')
-    animals = [l.strip().lower() for l in f.readlines()]
-    f.close()
-
-    @bot.command()
-    async def insult(ctx):
-        adj, animal = random.choice(adjectives), random.choice(animals)
-        await ctx.send(f'Shut the fuck up, you {adj} {animal}')
-except FileNotFoundError as err:
-    print(f'Could not load {err.filename}. $insult will not be loaded.', file=sys.stderr)
-    @bot.command()
-    async def insult(ctx):
-        await ctx.send("Couldn't find my lists of insult ingredients but you're still a little bitch boy.")
 
 
-def draw_text_bar_graph(data: [(str, int)]) -> str:
+# Unused and messy but useful.
+def draw_textual_bar_graph(data: [(str, int)]) -> str:
     # Sort by descending magnitude.
     categories = map(lambda pair: pair[0], data)
     counts = map(lambda pair: pair[1], data)
@@ -108,45 +100,57 @@ def draw_text_bar_graph(data: [(str, int)]) -> str:
         agg += f'{cat}{pad0}[{num}]{pad1}{"#"*num}\n'
     return '```\n' + agg + '```'
 
+def constrain(v, min, max):
+    if v < min:
+        return min
+    if v > max:
+        return max
+    return v
+
 def draw_bar_graph(data: dict) -> 'Plot':
-    names, counts = [], []
-    # Sort by count, descending.
-    for name, count in sorted(data.items(), key=lambda pair: -pair[1]):
-        names.append(name)
-        counts.append(count)
+    descending_count = lambda pair: -pair[1]
+    names, counts = zip(*sorted(data.items(), key=descending_count))
+
+    def colorize(count):
+        # The chance anyone will hit 750 out of 1000 messages is slim.
+        norm = count / 750
+        return tuple(constrain(v, 0.0, 1.0) for v in (
+            (norm*2, 1.0, 0.0)
+            if norm < 0.5
+            else (1.0, 2.0 - 2*norm, 0.0)
+        ))
+
     fig, ax = plt.subplots()
-    rects = ax.bar(names, counts, width=0.2)
-    # Annotate bars with labels manually.
-    for rect, count in zip(rects, counts):
-        ax.text(
-            rect.get_x() + rect.get_width()/2,
-            rect.get_height() + 1,
-            str(count),
-            ha='center'
-        )
+    rects = ax.barh(range(len(counts)), counts, height=0.5, align='center',
+        color=[colorize(c) for c in counts])
+    ax.set_yticks(range(len(names)))
+    ax.set_yticklabels(names)
+    plt.tight_layout()
+
     fig.savefig('./bar_plot.png')
     return './bar_plot.png'
 
 @bot.command()
 async def contributions(ctx):
-    counts = defaultdict(int)
-    async for message in ctx.channel.history(limit=1000):
-        counts[message.author.name] += 1
-    file_path = draw_bar_graph(counts)
-    await ctx.send(file=discord.File(file_path))
+    async with ctx.channel.typing():
+        counts = defaultdict(int)
+        async for message in ctx.channel.history(limit=1000):
+            counts[message.author.name] += 1
+        file_path = draw_bar_graph(counts)
+        await ctx.send(file=discord.File(file_path))
 
 
 @bot.listen()
 async def on_ready():
     success('Ready!')
 
+@bot.listen()
 async def on_command_error(ctx, err):
     if type(err) == commands.CommandNotFound:
         await ctx.send(full_help_text)
     else:
-        print(err.message, file=sys.stderr)
-
-bot.on_command_error = on_command_error
+        print(err, file=sys.stderr)
 
 print('  Starting bot...')
 bot.run(token)
+
