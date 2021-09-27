@@ -1,3 +1,0 @@
-#!/bin/bash
-
-clean _main.py main.py
