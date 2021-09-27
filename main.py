@@ -82,8 +82,6 @@ async def meow(ctx):
     await ctx.send(response)
 
 
-
-
 # Unused and messy but useful.
 def draw_textual_bar_graph(data: [(str, int)]) -> str:
     # Sort by descending magnitude.
