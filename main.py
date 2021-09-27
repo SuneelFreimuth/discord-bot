@@ -131,7 +131,7 @@ def draw_bar_graph(data: dict) -> 'Plot':
 @bot.command()
 async def contributions(ctx, *args):
     channel = bot.get_channel(int(args[0][2:-1])) if len(args) > 0 else ctx.channel
-    async with channel.typing():
+    async with ctx.channel.typing():
         counts = defaultdict(int)
         async for message in channel.history(limit=1000):
             counts[message.author.name] += 1
