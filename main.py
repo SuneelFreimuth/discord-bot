@@ -44,7 +44,7 @@ help_texts = OrderedDict(
     help=('$help [command]', 'Display a list of commands or get help on a specific command.'),
     ping=('$ping', 'pong'),
     meow=('$meow', 'meow'),
-    contributions=('$contributions', 'Count the number of times each user has sent a message in this channel and display the data as a bar graph.')
+    contributions=('$contributions [channel]', 'Count the number of times each user has sent a message in this channel and display the data as a bar graph.')
 )
 
 full_help_text = '**Commands:**\n'
@@ -129,10 +129,11 @@ def draw_bar_graph(data: dict) -> 'Plot':
     return './bar_plot.png'
 
 @bot.command()
-async def contributions(ctx):
-    async with ctx.channel.typing():
+async def contributions(ctx, *args):
+    channel = bot.get_channel(int(args[0][2:-1])) if len(args) > 0 else ctx.channel
+    async with channel.typing():
         counts = defaultdict(int)
-        async for message in ctx.channel.history(limit=1000):
+        async for message in channel.history(limit=1000):
             counts[message.author.name] += 1
         file_path = draw_bar_graph(counts)
         await ctx.send(file=discord.File(file_path))
